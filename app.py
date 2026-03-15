@@ -3,84 +3,91 @@ import streamlit as st
 import sys
 import os
 import importlib.util
-import traceback
 from pathlib import Path
 
-# ===== LAZY IMPORT: Try to load auth functions, but don't crash if it fails =====
+# ===== NO DIRECT IMPORTS: Load everything from files =====
 
-# Define stub functions as fallbacks
-_is_authenticated = lambda: st.session_state.get('authenticated', False) if st else False
-_get_user_role = lambda: st.session_state.get('user_role', 'citizen') if st else 'citizen'
-_get_user_info = lambda: st.session_state.get('user') if st else None
+# Stub functions - these are the absolute fallback
+_is_authenticated = lambda: False
+_get_user_role = lambda: 'citizen'
+_get_user_info = lambda: None
 _logout_user = lambda: None
-_login_user = lambda e, p: (False, "Login not configured")
-_register_user = lambda fn, ln, e, ph, pw, cpw: (False, "Registration not configured")
+_login_user = lambda e, p: (False, "System not ready")
+_register_user = lambda fn, ln, e, ph, pw, cpw: (False, "System not ready")
 
-def _load_auth_module():
-    """Safely load the auth module with detailed error reporting"""
+def _initialize_auth():
+    """Load auth functions from file without using normal imports"""
     global _is_authenticated, _get_user_role, _get_user_info, _logout_user, _login_user, _register_user
     
-    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-    UTILS_DIR = os.path.join(SCRIPT_DIR, 'utils')
-    
-    if SCRIPT_DIR not in sys.path:
-        sys.path.insert(0, SCRIPT_DIR)
-
     try:
-        from utils.auth_utils import (
-            is_authenticated, get_user_role, get_user_info,
-            logout_user, login_user, register_user
-        )
-        _is_authenticated = is_authenticated
-        _get_user_role = get_user_role
-        _get_user_info = get_user_info
-        _logout_user = logout_user
-        _login_user = login_user
-        _register_user = register_user
+        # Get absolute paths
+        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+        auth_file = os.path.join(SCRIPT_DIR, 'utils', 'auth_utils.py')
+        
+        # Only proceed if file exists
+        if not os.path.exists(auth_file):
+            return False
+        
+        # Load the module directly from file
+        spec = importlib.util.spec_from_file_location('auth_utils_module', auth_file)
+        if not (spec and spec.loader):
+            return False
+        
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        
+        # Extract functions
+        _is_authenticated = getattr(module, 'is_authenticated', _is_authenticated)
+        _get_user_role = getattr(module, 'get_user_role', _get_user_role)
+        _get_user_info = getattr(module, 'get_user_info', _get_user_info)
+        _logout_user = getattr(module, 'logout_user', _logout_user)
+        _login_user = getattr(module, 'login_user', _login_user)
+        _register_user = getattr(module, 'register_user', _register_user)
+        
         return True
-    except Exception as e:
-        # Try direct file loading as fallback
-        try:
-            auth_utils_path = os.path.join(UTILS_DIR, 'auth_utils.py')
-            spec = importlib.util.spec_from_file_location('utils.auth_utils', auth_utils_path)
-            if spec and spec.loader:
-                module = importlib.util.module_from_spec(spec)
-                sys.modules['utils.auth_utils'] = module
-                spec.loader.exec_module(module)
-                
-                _is_authenticated = module.is_authenticated
-                _get_user_role = module.get_user_role
-                _get_user_info = module.get_user_info
-                _logout_user = module.logout_user
-                _login_user = module.login_user
-                _register_user = module.register_user
-                return True
-        except Exception:
-            pass
-    
-    return False
+    except Exception:
+        # If anything fails, we already have stub functions
+        return False
 
-# Load auth module at startup
-_auth_loaded = _load_auth_module()
+# Initialize auth at startup (but don't crash if it fails)
+_auth_ok = _initialize_auth()
 
-# Export functions with proper names
+# Export wrapper functions
 def is_authenticated():
-    return _is_authenticated()
+    try:
+        return _is_authenticated()
+    except:
+        return False
 
 def get_user_role():
-    return _get_user_role()
+    try:
+        return _get_user_role()
+    except:
+        return 'citizen'
 
 def get_user_info():
-    return _get_user_info()
+    try:
+        return _get_user_info()
+    except:
+        return None
 
 def logout_user():
-    return _logout_user()
+    try:
+        return _logout_user()
+    except:
+        pass
 
-def login_user(email: str, password: str):
-    return _login_user(email, password)
+def login_user(email, password):
+    try:
+        return _login_user(email, password)
+    except:
+        return (False, "Login unavailable")
 
-def register_user(first_name: str, last_name: str, email: str, phone: str, password: str, confirm_password: str):
-    return _register_user(first_name, last_name, email, phone, password, confirm_password)
+def register_user(first_name, last_name, email, phone, password, confirm_password):
+    try:
+        return _register_user(first_name, last_name, email, phone, password, confirm_password)
+    except:
+        return (False, "Registration unavailable")
 
 # ===========================
 # Header Navigation (React-like)
