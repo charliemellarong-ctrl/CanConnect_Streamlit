@@ -6,6 +6,7 @@ import importlib.util
 from pathlib import Path
 
 # ===== NO DIRECT IMPORTS: Load everything from files =====
+# Deployment fix: 2026-03-15 - Force redeployment with file-based loading
 
 # Stub functions - these are the absolute fallback
 _is_authenticated = lambda: False
