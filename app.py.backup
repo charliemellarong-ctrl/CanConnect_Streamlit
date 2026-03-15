@@ -1,0 +1,523 @@
+"""CanConnect - E-Government Services - Main Application"""
+import streamlit as st
+import sys
+from pathlib import Path
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent))
+
+from utils.auth_utils import (
+    is_authenticated,
+    get_user_role,
+    get_user_info,
+    logout_user,
+    login_user,
+    register_user
+)
+from utils.document_definitions import get_all_documents, get_all_categories, CATEGORIES
+
+# ===========================
+# Page Configuration
+# ===========================
+st.set_page_config(
+    page_title="CanConnect - E-Government Services",
+    page_icon="🏛️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ===========================
+# Session State Initialization
+# ===========================
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+    st.session_state.user = None
+    st.session_state.token = None
+    st.session_state.user_role = None
+    st.session_state.user_id = None
+    st.session_state.show_register = False
+    st.session_state.selected_category = "All Services"
+
+# ===========================
+# Custom CSS Styling
+# ===========================
+st.markdown("""
+    <style>
+    :root {
+        --primary-color: #1e40af;
+        --secondary-color: #0369a1;
+        --accent-color: #06b6d4;
+        --success-color: #10b981;
+        --warning-color: #f59e0b;
+        --danger-color: #ef4444;
+        --light-gray: #f9fafb;
+        --border-gray: #e5e7eb;
+        --text-primary: #111827;
+        --text-secondary: #6b7280;
+    }
+
+    * {
+        font-family: "Inter", "Segoe UI", sans-serif;
+    }
+
+    .main-title {
+        text-align: center;
+        color: var(--primary-color);
+        margin-bottom: 2rem;
+        font-size: 2.5rem;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+    }
+
+    .subtitle {
+        text-align: center;
+        color: var(--text-secondary);
+        font-size: 1.1rem;
+        margin-bottom: 2rem;
+    }
+
+    .hero-section {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        padding: 3rem;
+        border-radius: 16px;
+        color: white;
+        margin-bottom: 2rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+        text-align: center;
+    }
+
+    .hero-section h1 {
+        font-size: 2.2rem;
+        font-weight: 700;
+        margin-bottom: 1rem;
+    }
+
+    .hero-section p {
+        font-size: 1.1rem;
+        opacity: 0.95;
+    }
+
+    .dashboard-header {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        padding: 2rem;
+        border-radius: 12px;
+        color: white;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .user-badge {
+        display: inline-block;
+        padding: 0.5rem 1rem;
+        background-color: rgba(255, 255, 255, 0.2);
+        color: white;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .service-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        border: 1px solid var(--border-gray);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
+        cursor: pointer;
+        height: 100%;
+    }
+
+    .service-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+        border-color: var(--accent-color);
+    }
+
+    .service-card-icon {
+        font-size: 2.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .service-card-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .service-card-desc {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        margin-bottom: 1rem;
+    }
+
+    .service-card-footer {
+        font-size: 0.8rem;
+        color: var(--accent-color);
+        font-weight: 600;
+    }
+
+    .auth-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+        padding: 2rem;
+        border: 1px solid var(--border-gray);
+        max-width: 400px;
+        margin: 0 auto;
+    }
+
+    .stat-card {
+        background: white;
+        border-radius: 8px;
+        padding: 1.5rem;
+        border: 1px solid var(--border-gray);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        text-align: center;
+    }
+
+    .section-title {
+        color: var(--text-primary);
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 1.5rem;
+        border-bottom: 2px solid var(--accent-color);
+        padding-bottom: 0.5rem;
+    }
+
+    .category-badge {
+        display: inline-block;
+        padding: 0.4rem 0.8rem;
+        background-color: var(--light-gray);
+        color: var(--text-primary);
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+
+    .form-label {
+        color: var(--text-primary);
+        font-weight: 600;
+        font-size: 0.95rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .document-card {
+        padding: 1.5rem;
+        border: 1px solid var(--border-gray);
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        background-color: white;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
+    }
+
+    .document-card:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        border-color: var(--accent-color);
+    }
+
+    .stButton button {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        color: white;
+        border: none;
+        font-weight: 600;
+    }
+
+    .stButton button:hover {
+        background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-color) 100%);
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+
+# ===========================
+# Authentication Pages
+# ===========================
+
+def show_login_page():
+    """Display login page"""
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown('<h1 class="main-title">CanConnect</h1>', unsafe_allow_html=True)
+        st.markdown('<p class="subtitle" style="text-align: center; margin-bottom: 2rem;">E-Government Services Platform</p>', unsafe_allow_html=True)
+        
+        st.markdown('<div class="auth-card">', unsafe_allow_html=True)
+        st.markdown("## Sign In")
+        st.markdown('<p class="subtitle">Access your government services account</p>', unsafe_allow_html=True)
+        
+        st.markdown("")  # spacing
+        
+        login_email = st.text_input(
+            "Email Address",
+            key="login_email",
+            placeholder="you@example.com",
+            help="Enter your registered email address"
+        )
+        
+        login_password = st.text_input(
+            "Password",
+            type="password",
+            key="login_password",
+            placeholder="Enter your password",
+            help="Enter your account password"
+        )
+        
+        st.markdown("")  # spacing
+        
+        col_btn1, col_btn2 = st.columns(2)
+        
+        with col_btn1:
+            if st.button("Sign In", use_container_width=True, type="primary", key="login_btn"):
+                if not login_email or not login_password:
+                    st.error("Please fill in all fields")
+                else:
+                    with st.spinner("Signing in..."):
+                        success, message = login_user(login_email, login_password)
+                        if success:
+                            st.success(message)
+                            st.rerun()
+                        else:
+                            st.error(message)
+        
+        with col_btn2:
+            if st.button("Demo", use_container_width=True, key="demo_btn"):
+                st.info("**Demo Credentials**\n\n"
+                       "Citizen: citizen@test.com\n\n"
+                       "Staff: staff@test.com\n\n"
+                       "Admin: admin@test.com\n\n"
+                       "_Password: password_")
+        
+        st.markdown("---")
+        st.markdown('<p class="subtitle" style="text-align: center; margin-bottom: 1rem;">Don\'t have an account?</p>', unsafe_allow_html=True)
+        if st.button("Create an Account", use_container_width=True, key="to_register"):
+            st.session_state.show_register = True
+            st.rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+
+
+def show_register_page():
+    """Display registration page"""
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown('<h1 class="main-title">CanConnect</h1>', unsafe_allow_html=True)
+        st.markdown('<p class="subtitle" style="text-align: center; margin-bottom: 2rem;">Create Your Account</p>', unsafe_allow_html=True)
+        
+        st.markdown('<div class="auth-card">', unsafe_allow_html=True)
+        st.markdown("## Register")
+        st.markdown('<p class="subtitle">Join CanConnect to access government services</p>', unsafe_allow_html=True)
+        
+        st.markdown("")  # spacing
+        
+        col_name1, col_name2 = st.columns(2)
+        with col_name1:
+            signup_first_name = st.text_input("First Name", key="signup_first_name", placeholder="John")
+        with col_name2:
+            signup_last_name = st.text_input("Last Name", key="signup_last_name", placeholder="Doe")
+        
+        signup_email = st.text_input("Email Address", key="signup_email", placeholder="you@example.com")
+        signup_phone = st.text_input("Phone Number", key="signup_phone", placeholder="+63-XXXXXXXXX")
+        signup_password = st.text_input("Password", type="password", key="signup_password", placeholder="••••••••")
+        signup_confirm = st.text_input("Confirm Password", type="password", key="signup_confirm", placeholder="••••••••")
+        
+        st.markdown("")  # spacing
+        
+        col_btn1, col_btn2 = st.columns(2)
+        
+        with col_btn1:
+            if st.button("Create Account", use_container_width=True, type="primary", key="signup_btn"):
+                if not all([signup_first_name, signup_last_name, signup_email, signup_phone, signup_password, signup_confirm]):
+                    st.error("Please fill in all fields")
+                elif signup_password != signup_confirm:
+                    st.error("Passwords do not match")
+                else:
+                    with st.spinner("Creating account..."):
+                        success, message = register_user(
+                            signup_first_name,
+                            signup_last_name,
+                            signup_email,
+                            signup_phone,
+                            signup_password,
+                            signup_confirm
+                        )
+                        if success:
+                            st.success(message)
+                            st.info("Please sign in with your new account")
+                        else:
+                            st.error(message)
+        
+        with col_btn2:
+            if st.button("Back to Sign In", use_container_width=True, key="to_login"):
+                st.session_state.show_register = False
+                st.rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+
+
+def show_sidebar_menu():
+    """Show sidebar navigation based on user role"""
+    with st.sidebar:
+        st.markdown("---")
+        user = get_user_info()
+        if user:
+            st.markdown(f'<div style="text-align: center; margin-bottom: 1rem;"><span class="user-badge">{get_user_role().upper()}</span></div>', unsafe_allow_html=True)
+            st.markdown(f"**{user.get('first_name', '')} {user.get('last_name', '')}**")
+            st.markdown(f"{user.get('email', '')}")
+            st.divider()
+        
+        role = get_user_role()
+        
+        if role == "admin":
+            st.markdown('<div class="section-title" style="border: none; font-size: 1rem;">Administration</div>', unsafe_allow_html=True)
+            st.page_link("pages/10_admin_dashboard.py", label="Dashboard", icon="📊")
+            st.page_link("pages/11_user_management.py", label="User Management", icon="👥")
+            st.page_link("pages/12_document_review.py", label="Document Review", icon="📋")
+            st.page_link("pages/13_analytics.py", label="Analytics", icon="📈")
+        
+        elif role == "staff":
+            st.markdown('<div class="section-title" style="border: none; font-size: 1rem;">Staff Operations</div>', unsafe_allow_html=True)
+            st.page_link("pages/10_staff_dashboard.py", label="Dashboard", icon="📊")
+            st.page_link("pages/12_document_review.py", label="Review Documents", icon="✅")
+            st.page_link("pages/14_staff_reports.py", label="Reports", icon="📋")
+        
+        else:  # citizen
+            st.markdown('<div class="section-title" style="border: none; font-size: 1rem;">My Services</div>', unsafe_allow_html=True)
+            st.page_link("pages/10_citizen_dashboard.py", label="Dashboard", icon="📊")
+            st.page_link("pages/15_request_document.py", label="Request Document", icon="📝")
+            st.page_link("pages/16_track_request.py", label="Track Request", icon="🔍")
+            st.page_link("pages/17_payments.py", label="Payments", icon="💳")
+        
+        st.divider()
+        st.page_link("pages/18_profile.py", label="My Profile", icon="👤")
+        
+        st.divider()
+        if st.button("Sign Out", use_container_width=True, type="secondary"):
+            logout_user()
+            st.rerun()
+
+
+def show_citizen_dashboard():
+    """Show citizen dashboard"""
+    user = get_user_info()
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.markdown('## Dashboard', unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"<div style='text-align: right;'><span class='user-badge'>Citizen</span></div>", unsafe_allow_html=True)
+    
+    st.divider()
+    
+    if user:
+        st.markdown(f"Welcome back, **{user.get('first_name')} {user.get('last_name')}**")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        with st.container(border=True):
+            st.metric("Requests", "0", help="Documents requested")
+    with col2:
+        with st.container(border=True):
+            st.metric("Completed", "0", help="Documents completed")
+    with col3:
+        with st.container(border=True):
+            st.metric("Pending", "0", help="Awaiting approval")
+    
+    st.divider()
+    st.markdown("### Quick Actions")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.page_link("pages/15_request_document.py", label="Request Document", icon="📝")
+    with col2:
+        st.page_link("pages/16_track_request.py", label="Track Status", icon="🔍")
+    with col3:
+        st.page_link("pages/17_payments.py", label="Make Payment", icon="💳")
+    
+    st.divider()
+    st.markdown("### Available Services")
+    st.info("Use the **Request Document** page to access all available government services")
+
+
+def show_staff_dashboard():
+    """Show staff dashboard"""
+    st.markdown('## Staff Dashboard', unsafe_allow_html=True)
+    st.divider()
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        with st.container(border=True):
+            st.metric("To Review", "0", help="Pending review")
+    with col2:
+        with st.container(border=True):
+            st.metric("Verified Today", "0", help="Documents verified")
+    with col3:
+        with st.container(border=True):
+            st.metric("In Progress", "0", help="Active processing")
+    
+    st.divider()
+    st.markdown("### Priority Tasks")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.page_link("pages/12_document_review.py", label="Review Documents", icon="✅")
+    with col2:
+        st.page_link("pages/14_staff_reports.py", label="View Reports", icon="📋")
+
+
+def show_admin_dashboard():
+    """Show admin dashboard"""
+    st.markdown('## Admin Dashboard', unsafe_allow_html=True)
+    st.divider()
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        with st.container(border=True):
+            st.metric("Total Users", "0")
+    with col2:
+        with st.container(border=True):
+            st.metric("Documents", "0")
+    with col3:
+        with st.container(border=True):
+            st.metric("Revenue", "₱0")
+    with col4:
+        with st.container(border=True):
+            st.metric("Processing", "0")
+    
+    st.divider()
+    st.markdown("### Administration Tools")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.page_link("pages/11_user_management.py", label="Manage Users", icon="👥")
+    with col2:
+        st.page_link("pages/12_document_review.py", label="Review Documents", icon="📋")
+    with col3:
+        st.page_link("pages/13_analytics.py", label="Analytics", icon="📈")
+
+
+# ===========================
+# Main App Logic
+# ===========================
+
+if is_authenticated():
+    # Show sidebar for authenticated users
+    show_sidebar_menu()
+    
+    # Get user role for dashboard
+    role = get_user_role()
+    
+    # Show appropriate dashboard
+    if role == "admin":
+        show_admin_dashboard()
+    elif role == "staff":
+        show_staff_dashboard()
+    else:  # citizen
+        show_citizen_dashboard()
+else:
+    # Show login/register pages for unauthenticated users
+    if st.session_state.show_register:
+        show_register_page()
+    else:
+        show_login_page()
