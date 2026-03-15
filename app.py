@@ -2,28 +2,33 @@
 import streamlit as st
 import sys
 import os
+import importlib.util
 from pathlib import Path
 
-# ===== CRITICAL: Fix import path for both local and Streamlit Cloud =====
-def setup_imports():
-    """Setup Python path for imports to work on both local and Streamlit Cloud."""
-    script_file = os.path.abspath(__file__)
-    script_dir = os.path.dirname(script_file)
-    
-    # Add script directory to path if not already there
-    if script_dir not in sys.path:
-        sys.path.insert(0, script_dir)
-    
-    # Also try adding parent directory (for /mount/src/can_connect_st structure)
-    parent_dir = os.path.dirname(script_dir)
-    if parent_dir not in sys.path and parent_dir != script_dir:
-        sys.path.insert(0, parent_dir)
-    
-    return script_dir
+# ===== ABSOLUTE FIX: Direct file-based imports for Streamlit Cloud =====
+def load_module_from_file(module_name: str, file_path: str):
+    """Load a module directly from a file path."""
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, file_path)
+        if spec and spec.loader:
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+            return module
+        return None
+    except Exception as e:
+        st.error(f"Failed to load {module_name} from {file_path}: {e}")
+        return None
 
-script_dir = setup_imports()
+# Get the script directory (works on both local and Streamlit Cloud)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+UTILS_DIR = os.path.join(SCRIPT_DIR, 'utils')
 
-# Import auth utilities with fallback
+# Ensure utils directory is in sys.path as fallback
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
+# Try direct import first (fast path)
 try:
     from utils.auth_utils import (
         is_authenticated,
@@ -33,17 +38,16 @@ try:
         login_user,
         register_user
     )
-except (ImportError, ModuleNotFoundError) as e:
-    # If normal import fails, try importing the module directly
-    import importlib.util
-    utils_path = os.path.join(script_dir, 'utils', 'auth_utils.py')
+except (ImportError, ModuleNotFoundError):
+    # Fallback: Load utils package manually
+    utils_init_path = os.path.join(UTILS_DIR, '__init__.py')
+    utils_module = load_module_from_file('utils', utils_init_path)
     
-    if os.path.exists(utils_path):
-        spec = importlib.util.spec_from_file_location("auth_utils", utils_path)
-        auth_utils = importlib.util.module_from_spec(spec)
-        sys.modules['auth_utils'] = auth_utils
-        spec.loader.exec_module(auth_utils)
-        
+    # Load auth_utils
+    auth_utils_path = os.path.join(UTILS_DIR, 'auth_utils.py')
+    auth_utils = load_module_from_file('utils.auth_utils', auth_utils_path)
+    
+    if auth_utils:
         is_authenticated = auth_utils.is_authenticated
         get_user_role = auth_utils.get_user_role
         get_user_info = auth_utils.get_user_info
@@ -51,8 +55,16 @@ except (ImportError, ModuleNotFoundError) as e:
         login_user = auth_utils.login_user
         register_user = auth_utils.register_user
     else:
-        st.error(f"❌ Could not find auth_utils.py at {utils_path}")
-        st.error(f"Script directory: {script_dir}")
+        st.error(f"""
+        ❌ FATAL: Unable to load auth_utils module
+        
+        Debug Info:
+        - Script dir: {SCRIPT_DIR}
+        - Utils dir: {UTILS_DIR}
+        - Auth utils path: {auth_utils_path}
+        - File exists: {os.path.exists(auth_utils_path)}
+        - sys.path: {sys.path[:3]}
+        """)
         st.stop()
 
 # ===========================
