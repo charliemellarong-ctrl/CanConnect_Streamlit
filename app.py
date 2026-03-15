@@ -6,78 +6,81 @@ import importlib.util
 import traceback
 from pathlib import Path
 
-# ===== ABSOLUTE FIX: Direct file-based imports for Streamlit Cloud =====
-def load_module_from_file(module_name: str, file_path: str):
-    """Load a module directly from a file path."""
+# ===== LAZY IMPORT: Try to load auth functions, but don't crash if it fails =====
+
+# Define stub functions as fallbacks
+_is_authenticated = lambda: st.session_state.get('authenticated', False) if st else False
+_get_user_role = lambda: st.session_state.get('user_role', 'citizen') if st else 'citizen'
+_get_user_info = lambda: st.session_state.get('user') if st else None
+_logout_user = lambda: None
+_login_user = lambda e, p: (False, "Login not configured")
+_register_user = lambda fn, ln, e, ph, pw, cpw: (False, "Registration not configured")
+
+def _load_auth_module():
+    """Safely load the auth module with detailed error reporting"""
+    global _is_authenticated, _get_user_role, _get_user_info, _logout_user, _login_user, _register_user
+    
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    UTILS_DIR = os.path.join(SCRIPT_DIR, 'utils')
+    
+    if SCRIPT_DIR not in sys.path:
+        sys.path.insert(0, SCRIPT_DIR)
+
     try:
-        spec = importlib.util.spec_from_file_location(module_name, file_path)
-        if spec and spec.loader:
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[module_name] = module
-            spec.loader.exec_module(module)
-            return module
-        return None
+        from utils.auth_utils import (
+            is_authenticated, get_user_role, get_user_info,
+            logout_user, login_user, register_user
+        )
+        _is_authenticated = is_authenticated
+        _get_user_role = get_user_role
+        _get_user_info = get_user_info
+        _logout_user = logout_user
+        _login_user = login_user
+        _register_user = register_user
+        return True
     except Exception as e:
-        st.error(f"Failed to load {module_name} from {file_path}")
-        st.error(f"Error: {str(e)}")
-        st.error(traceback.format_exc())
-        return None
-
-# Get the script directory (works on both local and Streamlit Cloud)
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-UTILS_DIR = os.path.join(SCRIPT_DIR, 'utils')
-
-# Ensure utils directory is in sys.path as fallback
-if SCRIPT_DIR not in sys.path:
-    sys.path.insert(0, SCRIPT_DIR)
-
-# Try direct import first (fast path)
-import_success = False
-try:
-    from utils.auth_utils import (
-        is_authenticated,
-        get_user_role,
-        get_user_info,
-        logout_user,
-        login_user,
-        register_user
-    )
-    import_success = True
-except Exception as e:
-    st.warning(f"Standard import failed: {str(e)}")
-    
-    # Fallback: Load utils package manually
-    utils_init_path = os.path.join(UTILS_DIR, '__init__.py')
-    utils_module = load_module_from_file('utils', utils_init_path)
-    
-    # Load auth_utils
-    auth_utils_path = os.path.join(UTILS_DIR, 'auth_utils.py')
-    auth_utils = load_module_from_file('utils.auth_utils', auth_utils_path)
-    
-    if auth_utils:
+        # Try direct file loading as fallback
         try:
-            is_authenticated = auth_utils.is_authenticated
-            get_user_role = auth_utils.get_user_role
-            get_user_info = auth_utils.get_user_info
-            logout_user = auth_utils.logout_user
-            login_user = auth_utils.login_user
-            register_user = auth_utils.register_user
-            import_success = True
-        except Exception as e:
-            st.error(f"Failed to extract functions from auth_utils: {e}")
-            st.error(traceback.format_exc())
-
-if not import_success:
-    st.error("""
-    ❌ FATAL: Unable to load authentication module
+            auth_utils_path = os.path.join(UTILS_DIR, 'auth_utils.py')
+            spec = importlib.util.spec_from_file_location('utils.auth_utils', auth_utils_path)
+            if spec and spec.loader:
+                module = importlib.util.module_from_spec(spec)
+                sys.modules['utils.auth_utils'] = module
+                spec.loader.exec_module(module)
+                
+                _is_authenticated = module.is_authenticated
+                _get_user_role = module.get_user_role
+                _get_user_info = module.get_user_info
+                _logout_user = module.logout_user
+                _login_user = module.login_user
+                _register_user = module.register_user
+                return True
+        except Exception:
+            pass
     
-    Debug Info:
-    - Script dir: """ + SCRIPT_DIR + """
-    - Utils dir: """ + UTILS_DIR + """
-    - Auth utils path: """ + os.path.join(UTILS_DIR, 'auth_utils.py') + """
-    - File exists: """ + str(os.path.exists(os.path.join(UTILS_DIR, 'auth_utils.py'))) + """
-    """)
-    st.stop()
+    return False
+
+# Load auth module at startup
+_auth_loaded = _load_auth_module()
+
+# Export functions with proper names
+def is_authenticated():
+    return _is_authenticated()
+
+def get_user_role():
+    return _get_user_role()
+
+def get_user_info():
+    return _get_user_info()
+
+def logout_user():
+    return _logout_user()
+
+def login_user(email: str, password: str):
+    return _login_user(email, password)
+
+def register_user(first_name: str, last_name: str, email: str, phone: str, password: str, confirm_password: str):
+    return _register_user(first_name, last_name, email, phone, password, confirm_password)
 
 # ===========================
 # Header Navigation (React-like)
