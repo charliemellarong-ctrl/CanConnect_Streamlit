@@ -4,20 +4,56 @@ import sys
 import os
 from pathlib import Path
 
-# Fix import path for Streamlit Cloud
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
+# ===== CRITICAL: Fix import path for both local and Streamlit Cloud =====
+def setup_imports():
+    """Setup Python path for imports to work on both local and Streamlit Cloud."""
+    script_file = os.path.abspath(__file__)
+    script_dir = os.path.dirname(script_file)
+    
+    # Add script directory to path if not already there
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+    
+    # Also try adding parent directory (for /mount/src/can_connect_st structure)
+    parent_dir = os.path.dirname(script_dir)
+    if parent_dir not in sys.path and parent_dir != script_dir:
+        sys.path.insert(0, parent_dir)
+    
+    return script_dir
 
-# Import auth utilities first
-from utils.auth_utils import (
-    is_authenticated,
-    get_user_role,
-    get_user_info,
-    logout_user,
-    login_user,
-    register_user
-)
+script_dir = setup_imports()
+
+# Import auth utilities with fallback
+try:
+    from utils.auth_utils import (
+        is_authenticated,
+        get_user_role,
+        get_user_info,
+        logout_user,
+        login_user,
+        register_user
+    )
+except (ImportError, ModuleNotFoundError) as e:
+    # If normal import fails, try importing the module directly
+    import importlib.util
+    utils_path = os.path.join(script_dir, 'utils', 'auth_utils.py')
+    
+    if os.path.exists(utils_path):
+        spec = importlib.util.spec_from_file_location("auth_utils", utils_path)
+        auth_utils = importlib.util.module_from_spec(spec)
+        sys.modules['auth_utils'] = auth_utils
+        spec.loader.exec_module(auth_utils)
+        
+        is_authenticated = auth_utils.is_authenticated
+        get_user_role = auth_utils.get_user_role
+        get_user_info = auth_utils.get_user_info
+        logout_user = auth_utils.logout_user
+        login_user = auth_utils.login_user
+        register_user = auth_utils.register_user
+    else:
+        st.error(f"❌ Could not find auth_utils.py at {utils_path}")
+        st.error(f"Script directory: {script_dir}")
+        st.stop()
 
 # ===========================
 # Header Navigation (React-like)
