@@ -3,6 +3,7 @@ import streamlit as st
 import sys
 import os
 import importlib.util
+import traceback
 from pathlib import Path
 
 # ===== ABSOLUTE FIX: Direct file-based imports for Streamlit Cloud =====
@@ -17,7 +18,9 @@ def load_module_from_file(module_name: str, file_path: str):
             return module
         return None
     except Exception as e:
-        st.error(f"Failed to load {module_name} from {file_path}: {e}")
+        st.error(f"Failed to load {module_name} from {file_path}")
+        st.error(f"Error: {str(e)}")
+        st.error(traceback.format_exc())
         return None
 
 # Get the script directory (works on both local and Streamlit Cloud)
@@ -29,6 +32,7 @@ if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
 # Try direct import first (fast path)
+import_success = False
 try:
     from utils.auth_utils import (
         is_authenticated,
@@ -38,7 +42,10 @@ try:
         login_user,
         register_user
     )
-except (ImportError, ModuleNotFoundError):
+    import_success = True
+except Exception as e:
+    st.warning(f"Standard import failed: {str(e)}")
+    
     # Fallback: Load utils package manually
     utils_init_path = os.path.join(UTILS_DIR, '__init__.py')
     utils_module = load_module_from_file('utils', utils_init_path)
@@ -48,24 +55,29 @@ except (ImportError, ModuleNotFoundError):
     auth_utils = load_module_from_file('utils.auth_utils', auth_utils_path)
     
     if auth_utils:
-        is_authenticated = auth_utils.is_authenticated
-        get_user_role = auth_utils.get_user_role
-        get_user_info = auth_utils.get_user_info
-        logout_user = auth_utils.logout_user
-        login_user = auth_utils.login_user
-        register_user = auth_utils.register_user
-    else:
-        st.error(f"""
-        ❌ FATAL: Unable to load auth_utils module
-        
-        Debug Info:
-        - Script dir: {SCRIPT_DIR}
-        - Utils dir: {UTILS_DIR}
-        - Auth utils path: {auth_utils_path}
-        - File exists: {os.path.exists(auth_utils_path)}
-        - sys.path: {sys.path[:3]}
-        """)
-        st.stop()
+        try:
+            is_authenticated = auth_utils.is_authenticated
+            get_user_role = auth_utils.get_user_role
+            get_user_info = auth_utils.get_user_info
+            logout_user = auth_utils.logout_user
+            login_user = auth_utils.login_user
+            register_user = auth_utils.register_user
+            import_success = True
+        except Exception as e:
+            st.error(f"Failed to extract functions from auth_utils: {e}")
+            st.error(traceback.format_exc())
+
+if not import_success:
+    st.error("""
+    ❌ FATAL: Unable to load authentication module
+    
+    Debug Info:
+    - Script dir: """ + SCRIPT_DIR + """
+    - Utils dir: """ + UTILS_DIR + """
+    - Auth utils path: """ + os.path.join(UTILS_DIR, 'auth_utils.py') + """
+    - File exists: """ + str(os.path.exists(os.path.join(UTILS_DIR, 'auth_utils.py'))) + """
+    """)
+    st.stop()
 
 # ===========================
 # Header Navigation (React-like)

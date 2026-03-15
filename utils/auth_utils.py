@@ -1,7 +1,21 @@
 """Authentication utilities for Streamlit app"""
-import streamlit as st
-import requests
-import json
+
+# Wrap imports to prevent import errors from breaking the module
+try:
+    import streamlit as st
+except ImportError:
+    st = None
+
+try:
+    import requests
+except ImportError:
+    requests = None
+
+try:
+    import json
+except ImportError:
+    json = None
+
 from typing import Optional, Dict, Tuple
 import os
 
@@ -10,6 +24,9 @@ API_BASE_URL = os.getenv("API_URL", "http://localhost:5000/api")
 
 def get_api_headers() -> Dict[str, str]:
     """Get authorization headers for API calls"""
+    if not st:
+        return {'Content-Type': 'application/json'}
+    
     headers = {'Content-Type': 'application/json'}
     if st.session_state.get('token'):
         headers['Authorization'] = f'Bearer {st.session_state.token}'
@@ -21,6 +38,9 @@ def login_user(email: str, password: str) -> Tuple[bool, str]:
     Authenticate user and store session
     Returns (success: bool, message: str)
     """
+    if not requests:
+        return False, "requests module not available"
+    
     try:
         response = requests.post(
             f"{API_BASE_URL}/auth/login",
@@ -32,18 +52,17 @@ def login_user(email: str, password: str) -> Tuple[bool, str]:
         if response.status_code == 200:
             data = response.json()
             if data.get('success'):
-                st.session_state.authenticated = True
-                st.session_state.token = data.get('token')
-                st.session_state.user = data.get('user', {})
-                st.session_state.user_role = data.get('user', {}).get('role', 'citizen')
-                st.session_state.user_id = data.get('user', {}).get('id')
+                if st:
+                    st.session_state.authenticated = True
+                    st.session_state.token = data.get('token')
+                    st.session_state.user = data.get('user', {})
+                    st.session_state.user_role = data.get('user', {}).get('role', 'citizen')
+                    st.session_state.user_id = data.get('user', {}).get('id')
                 return True, "Login successful"
             else:
                 return False, data.get('message', 'Login failed')
         else:
             return False, "Invalid credentials"
-    except requests.exceptions.ConnectionError:
-        return False, "Unable to connect to server"
     except Exception as e:
         return False, f"Error: {str(e)}"
 
@@ -62,6 +81,9 @@ def register_user(
     """
     if password != confirm_password:
         return False, "Passwords do not match"
+    
+    if not requests:
+        return False, "requests module not available"
     
     try:
         response = requests.post(
@@ -87,14 +109,18 @@ def register_user(
                 return False, data.get('message', 'Registration failed')
         else:
             return False, "Registration failed"
-    except requests.exceptions.ConnectionError:
-        return False, "Unable to connect to server"
     except Exception as e:
         return False, f"Error: {str(e)}"
 
 
 def verify_token() -> bool:
     """Verify if current token is valid"""
+    if not requests:
+        return False
+    
+    if not st:
+        return False
+    
     if not st.session_state.get('token'):
         return False
     
@@ -112,6 +138,9 @@ def verify_token() -> bool:
 
 def logout_user():
     """Clear session state"""
+    if not st:
+        return
+    
     st.session_state.authenticated = False
     st.session_state.token = None
     st.session_state.user = None
@@ -121,16 +150,25 @@ def logout_user():
 
 def is_authenticated() -> bool:
     """Check if user is authenticated"""
+    if not st:
+        return False
+    
     return st.session_state.get('authenticated', False)
 
 
 def get_user_role() -> str:
     """Get current user role"""
+    if not st:
+        return 'citizen'
+    
     return st.session_state.get('user_role', 'citizen')
 
 
 def get_user_info() -> Optional[Dict]:
     """Get current user information"""
+    if not st:
+        return None
+    
     return st.session_state.get('user')
 
 
@@ -152,5 +190,5 @@ def get_session_status() -> Dict:
         'authenticated': is_authenticated(),
         'user': get_user_info(),
         'role': get_user_role(),
-        'user_id': st.session_state.get('user_id')
+        'user_id': st.session_state.get('user_id') if st else None
     }
